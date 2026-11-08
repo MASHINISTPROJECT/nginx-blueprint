@@ -15,22 +15,18 @@ WHITE='\033[0;37m'; GREEN='\033[0;32m'
 YELLOW='\033[0;33m'; RED='\033[0;31m'
 NC='\033[0m'
 
-# header function for consistent separators
+# Compact header function
 header() {
-  echo -e " "
-  echo -e "\n${BLUE}───────────────────────────────────────────────${NC}"
-  echo -e "${BOLD_BLUE}[Orchestrator] $1${NC}"
+  echo -e "${BOLD_BLUE}➜ $1${NC}"
 }
 
 # Start orchestration
-echo -e "\n${BOLD_BLUE}[Orchestrator] Module orchestration starting...${NC}"
+echo -e "\n${BOLD_BLUE}Запуск модулей...${NC}"
 
 # Helper to test enabled status: true or 1
 is_enabled() { [[ "$1" =~ ^(true|1)$ ]]; }
 
 # 0) PHP extension selection
-# Rebuilt on every start so it follows image updates. Runs before the modules
-# because they (and php-fpm, started by nginx) inherit PHP_INI_SCAN_DIR.
 PHP_VERSION="${PHP_VERSION:-8.4}"
 PHP_DISABLED_EXTENSIONS="${PHP_DISABLED_EXTENSIONS:-}"
 PHP_CONF_SOURCE="${PHP_CONF_SOURCE:-/etc/php/${PHP_VERSION}}"
@@ -42,13 +38,13 @@ disabled_list="${disabled_list,,}"
 user_inis=("$PHP_CONF_USER"/*.ini)
 
 if [[ -n "${disabled_list// /}" || ${#user_inis[@]} -gt 0 ]]; then
-  header "Configuring PHP extensions"
+  header "Настройка PHP"
   rm -rf "$PHP_CONF_ACTIVE"
   mkdir -p "$PHP_CONF_ACTIVE"
 
   linked=0
   skipped=" "
-  # A single scan dir serves both SAPIs, so merge FPM with the CLI-only files
+  
   for ini in "$PHP_CONF_SOURCE"/fpm/conf.d/*.ini "$PHP_CONF_SOURCE"/cli/conf.d/*.ini; do
     name=$(basename "$ini")
     [[ -e "$PHP_CONF_ACTIVE/$name" ]] && continue
@@ -62,54 +58,51 @@ if [[ -n "${disabled_list// /}" || ${#user_inis[@]} -gt 0 ]]; then
   done
 
   if (( linked == 0 )); then
-    # An empty scan dir would leave PHP without any shared extension
-    echo -e "${YELLOW}[PHP] No extension .ini files found in ${PHP_CONF_SOURCE}; check PHP_VERSION. Keeping the image defaults.${NC}"
+    echo -e "${YELLOW}⚠ Не найдены конфиги расширений, используем дефолтные.${NC}"
     rm -rf "$PHP_CONF_ACTIVE"
   else
     for ext in $disabled_list; do
       if [[ "$skipped" == *" ${ext} "* ]]; then
-        echo -e "${WHITE}[PHP] Disabled extension: ${ext}${NC}"
+        echo -e "${WHITE}  - Отключено: ${ext}${NC}"
       else
-        echo -e "${YELLOW}[PHP] '${ext}' is not loaded by this image; nothing to disable.${NC}"
+        echo -e "${YELLOW}  - Расширение '${ext}' не загружено образом.${NC}"
       fi
     done
 
-    # The target may be a symlink into the read-only image; replace, don't write through
     for ini in "${user_inis[@]}"; do
       rm -f "$PHP_CONF_ACTIVE/$(basename "$ini")"
       cp "$ini" "$PHP_CONF_ACTIVE/"
-      echo -e "${WHITE}[PHP] Custom ini: $(basename "$ini")${NC}"
+      echo -e "${WHITE}  - Кастомный конфиг: $(basename "$ini")${NC}"
     done
 
     export PHP_INI_SCAN_DIR="$PHP_CONF_ACTIVE"
-    echo -e "${GREEN}[PHP] Extension configuration ready (${PHP_INI_SCAN_DIR})${NC}"
   fi
 else
   rm -rf "$PHP_CONF_ACTIVE"
 fi
 
-# 1) Run logcleaner second if enabled
+# 1) Logcleaner
 LOGCLEANER_STATUS="${LOGCLEANER_STATUS:-false}"
 if is_enabled "$LOGCLEANER_STATUS"; then
-  header "Running module: logcleaner"
+  header "Очистка логов"
   modules/logcleaner/start.sh
 fi
 
-# 2) Run auto-update first if enabled (only if module exists)
+# 2) Auto-update
 AUTOUPDATE_STATUS="${AUTOUPDATE_STATUS:-true}"
 if is_enabled "$AUTOUPDATE_STATUS" && [[ -f "modules/autoupdate/start.sh" ]]; then
-  header "Running module: autoupdate"
+  header "Проверка обновлений"
   modules/autoupdate/start.sh
 fi
 
-# 3) Run git before the other modules so they work on the freshly pulled code
+# 3) Git
 GIT_STATUS="${GIT_STATUS:-false}"
 if is_enabled "$GIT_STATUS" && [[ -x "modules/git/start.sh" ]]; then
-  header "Running module: git"
+  header "Обновление кода (Git)"
   modules/git/start.sh
 fi
 
-# 4) Execute other modules (except autoupdate, logcleaner, git and nginx)
+# 4) Other modules
 for module_dir in modules/*/; do
   module_name=$(basename "$module_dir")
   [[ "$module_name" =~ ^(autoupdate|logcleaner|git|nginx)$ ]] && continue
@@ -117,24 +110,22 @@ for module_dir in modules/*/; do
   status_var="${module_name^^}_STATUS"
   status="${!status_var:-false}"
 
-  # Skip silently if disabled
   if ! is_enabled "$status"; then
     continue
   fi
 
-  # Run module if script is executable
   if [[ -x "$start_script" ]]; then
-    header "Running module: ${module_name}"
+    header "Запуск модуля: ${module_name}"
     "$start_script"
   fi
 done
 
-# 5) Run nginx module last (blocking)
+# 5) Nginx
 NGINX_STATUS="${NGINX_STATUS:-true}"
 if is_enabled "$NGINX_STATUS"; then
-  header "Running module: nginx"
+  header "Запуск Nginx и PHP-FPM"
   
-  # 👇 НАШИ ИСПРАВЛЕНИЯ: подстановка реального порта перед запуском Nginx
+  # 👇 ПОДСТАНОВКА ПОРТА
   if [ -f "nginx/nginx.conf" ]; then
     sed -i "s/listen 80;/listen ${SERVER_PORT};/g" nginx/nginx.conf
     sed -i "s/listen \${SERVER_PORT};/listen ${SERVER_PORT};/g" nginx/nginx.conf
@@ -151,9 +142,7 @@ if is_enabled "$NGINX_STATUS"; then
   fi
 
   modules/nginx/start.sh
-  # nginx runs in foreground/blocking; exit after start
   exit 0
 fi
 
-# Completion message if nginx skipped
-echo -e "\n${GREEN}[Orchestrator] Module orchestration complete.${NC}\n"
+echo -e "\n${GREEN}✅ Все модули успешно запущены.${NC}\n"
