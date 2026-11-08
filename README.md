@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🦖 Pterodactyl Nginx Egg
+# Custom panel Nginx blueprint
 
-**A versatile Pterodactyl Egg featuring Nginx, PHP 8.x, WordPress, Git, Composer, Cronjob, ionCube Loader, Auto-Update, and Cloudflare Tunnel support.**
+**A versatile blueprint featuring Nginx, PHP 8.x, WordPress, Git, Composer, Cronjob, ionCube Loader, Auto-Update, and Cloudflare Tunnel support.**
 
 [![Latest Release](https://img.shields.io/github/v/release/Ym0T/pterodactyl-nginx-egg?style=for-the-badge&logo=github&color=2ea44f)](https://github.com/Ym0T/pterodactyl-nginx-egg/releases)
 [![License](https://img.shields.io/github/license/Ym0T/pterodactyl-nginx-egg?style=for-the-badge&color=blue)](LICENSE)
