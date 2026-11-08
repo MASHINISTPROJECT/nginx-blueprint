@@ -133,6 +133,23 @@ done
 NGINX_STATUS="${NGINX_STATUS:-true}"
 if is_enabled "$NGINX_STATUS"; then
   header "Running module: nginx"
+  
+  # 👇 НАШИ ИСПРАВЛЕНИЯ: подстановка реального порта перед запуском Nginx
+  if [ -f "nginx/nginx.conf" ]; then
+    sed -i "s/listen 80;/listen ${SERVER_PORT};/g" nginx/nginx.conf
+    sed -i "s/listen \${SERVER_PORT};/listen ${SERVER_PORT};/g" nginx/nginx.conf
+  fi
+  
+  if [ -d "nginx/conf.d" ]; then
+    find nginx/conf.d -type f -name "*.conf" -exec sed -i "s/listen 80;/listen ${SERVER_PORT};/g" {} +
+    find nginx/conf.d -type f -name "*.conf" -exec sed -i "s/listen \${SERVER_PORT};/listen ${SERVER_PORT};/g" {} +
+  fi
+  
+  if [ -f "nginx/sites-enabled/default" ]; then
+    sed -i "s/listen 80;/listen ${SERVER_PORT};/g" nginx/sites-enabled/default
+    sed -i "s/listen \${SERVER_PORT};/listen ${SERVER_PORT};/g" nginx/sites-enabled/default
+  fi
+
   modules/nginx/start.sh
   # nginx runs in foreground/blocking; exit after start
   exit 0
